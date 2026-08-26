@@ -22,11 +22,16 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # Dodano working-directory
       - run: flutter pub get
+        working-directory: fpg_v23
 
+      # Dodano working-directory
       - run: flutter build apk --release
+        working-directory: fpg_v23
 
+      # Zaktualizowano ścieżkę pobierania gotowego pliku APK
       - uses: actions/upload-artifact@v4
         with:
           name: FPG-APK
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: fpg_v23/build/app/outputs/flutter-apk/app-release.apk
