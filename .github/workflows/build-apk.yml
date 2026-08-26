@@ -22,8 +22,6 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - run: flutter create --platforms=android --org com.fpg.game --project-name fpg .
-
       - run: flutter pub get
 
       - run: flutter build apk --release
