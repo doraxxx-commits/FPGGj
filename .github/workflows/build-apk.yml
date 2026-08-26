@@ -12,34 +12,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: "3.35.0"
-          channel: stable
-
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      # Akceptacja licencji Android SDK
-      - name: Accept Android Licenses
-        run: y | flutter doctor --android-licenses || true
-        working-directory: fpg_v23
+      # Automatyczna instalacja i akceptacja wszystkich licencji Android SDK
+      - uses: android-actions/setup-android@v3
 
-      # Pobranie pakietów
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.35.0"
+          channel: stable
+
       - name: Install Dependencies
         run: flutter pub get
         working-directory: fpg_v23
 
-      # Budowanie APK ze zwiększoną pamięcią dla Gradle
       - name: Build APK
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m"
         run: flutter build apk --release
         working-directory: fpg_v23
 
-      # Wrzucenie gotowego pliku do Artifacts
       - uses: actions/upload-artifact@v4
         with:
           name: FPG-APK
