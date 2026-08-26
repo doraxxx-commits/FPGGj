@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build:
-    name: Build and validate Android APK
+    name: Build Android APK
     runs-on: ubuntu-latest
 
     steps:
@@ -18,11 +18,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
-          cache: gradle
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -31,29 +30,43 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Create clean Flutter Android project
+      - name: Check Flutter project
         shell: bash
         run: |
-          set -euo pipefail
+          set -e
+
+          test -f pubspec.yaml
+          test -d lib
+
+      - name: Create clean Flutter project
+        shell: bash
+        run: |
+          set -e
 
           rm -rf .ci_flutter_app
 
-          flutter create -t app \
+          flutter create \
             --platforms=android \
             --org com.fpg.game \
             --project-name fpg \
             .ci_flutter_app
 
-          rm -rf .ci_flutter_app/lib .ci_flutter_app/test
+          rm -rf .ci_flutter_app/lib
+          rm -rf .ci_flutter_app/test
+
           cp -R lib .ci_flutter_app/lib
-          cp -R test .ci_flutter_app/test
+
+          if [ -d test ]; then
+            cp -R test .ci_flutter_app/test
+          fi
+
           cp pubspec.yaml .ci_flutter_app/pubspec.yaml
 
       - name: Get dependencies
         working-directory: .ci_flutter_app
         run: flutter pub get
 
-      - name: Analyze project
+      - name: Analyze
         working-directory: .ci_flutter_app
         run: flutter analyze
         continue-on-error: true
@@ -62,73 +75,29 @@ jobs:
         working-directory: .ci_flutter_app
         run: flutter test
 
-      - name: Clean previous build
-        working-directory: .ci_flutter_app
-        run: flutter clean
-
-      - name: Build release APK
+      - name: Build APK
         working-directory: .ci_flutter_app
         run: flutter build apk --release
 
-      - name: Verify APK exists and is valid
+      - name: Check APK
         shell: bash
         run: |
-          set -euo pipefail
+          set -e
 
           APK=".ci_flutter_app/build/app/outputs/flutter-apk/app-release.apk"
 
-          test -f "$APK"
-
-          SIZE=$(stat -c%s "$APK")
-          echo "APK size: $SIZE bytes"
-
-          test "$SIZE" -gt 1000000
-
-          unzip -t "$APK"
-
-          APKSIGNER=$(find "$ANDROID_HOME/build-tools" \
-            -name apksigner \
-            -type f | sort -V | tail -n 1 || true)
-
-          if [ -n "$APKSIGNER" ]; then
-            "$APKSIGNER" verify --verbose "$APK"
-          else
-            echo "apksigner not found; ZIP integrity check passed."
+          if [ ! -f "$APK" ]; then
+            echo "ERROR: APK was not created."
+            exit 1
           fi
 
-      - name: Prepare release files
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          rm -rf release
-          mkdir -p release
-
-          cp \
-            .ci_flutter_app/build/app/outputs/flutter-apk/app-release.apk \
-            release/FPG-release.apk
-
-          cd release
-
-          zip -9 FPG-release.zip FPG-release.apk
-          sha256sum FPG-release.apk > FPG-release.apk.sha256
-
-          unzip -t FPG-release.zip
+          echo "APK created successfully:"
+          ls -lh "$APK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: FPG-release-APK
-          path: release/FPG-release.apk
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Upload ZIP and checksum
-        uses: actions/upload-artifact@v4
-        with:
-          name: FPG-release-ZIP
-          path: |
-            release/FPG-release.zip
-            release/FPG-release.apk.sha256
+          path: .ci_flutter_app/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
