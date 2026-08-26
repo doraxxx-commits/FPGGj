@@ -2,7 +2,8 @@ name: Build FPG APK
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -14,8 +15,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Show repository structure
+        shell: bash
+        run: |
+          echo "=== Repository ==="
+          pwd
+          echo "=== Files ==="
+          find . -maxdepth 3 -type f \
+            ! -path "./.git/*" \
+            | sort
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
@@ -30,15 +41,50 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Check Flutter project
+      - name: Find Flutter project
         shell: bash
         run: |
           set -e
 
-          test -f pubspec.yaml
-          test -d lib
+          echo "Searching for pubspec.yaml..."
 
-      - name: Create clean Flutter project
+          PUBSPEC=$(find . \
+            -not -path "./.git/*" \
+            -not -path "./.ci_flutter_app/*" \
+            -name "pubspec.yaml" \
+            -type f \
+            | head -n 1)
+
+          if [ -z "$PUBSPEC" ]; then
+            echo "ERROR: pubspec.yaml was not found."
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$PUBSPEC")
+
+          echo "Flutter project found:"
+          echo "$PROJECT_DIR"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Verify Flutter project
+        shell: bash
+        run: |
+          set -e
+
+          echo "Project directory:"
+          echo "$PROJECT_DIR"
+
+          test -f "$PROJECT_DIR/pubspec.yaml"
+
+          if [ ! -d "$PROJECT_DIR/lib" ]; then
+            echo "ERROR: lib directory was not found."
+            echo "Contents of project:"
+            find "$PROJECT_DIR" -maxdepth 2 -type f | sort
+            exit 1
+          fi
+
+      - name: Create clean Android project
         shell: bash
         run: |
           set -e
@@ -51,35 +97,57 @@ jobs:
             --project-name fpg \
             .ci_flutter_app
 
+      - name: Copy application files
+        shell: bash
+        run: |
+          set -e
+
           rm -rf .ci_flutter_app/lib
-          rm -rf .ci_flutter_app/test
+          cp -R "$PROJECT_DIR/lib" .ci_flutter_app/lib
 
-          cp -R lib .ci_flutter_app/lib
-
-          if [ -d test ]; then
-            cp -R test .ci_flutter_app/test
+          if [ -d "$PROJECT_DIR/test" ]; then
+            rm -rf .ci_flutter_app/test
+            cp -R "$PROJECT_DIR/test" .ci_flutter_app/test
           fi
 
-          cp pubspec.yaml .ci_flutter_app/pubspec.yaml
+          cp "$PROJECT_DIR/pubspec.yaml" .ci_flutter_app/pubspec.yaml
 
-      - name: Get dependencies
-        working-directory: .ci_flutter_app
-        run: flutter pub get
+          if [ -f "$PROJECT_DIR/analysis_options.yaml" ]; then
+            cp "$PROJECT_DIR/analysis_options.yaml" \
+              .ci_flutter_app/analysis_options.yaml
+          fi
 
-      - name: Analyze
+          echo "=== Copied files ==="
+          find .ci_flutter_app/lib -maxdepth 3 -type f | sort
+
+      - name: Get Flutter dependencies
         working-directory: .ci_flutter_app
-        run: flutter analyze
+        run: |
+          flutter pub get
+
+      - name: Analyze Flutter project
+        working-directory: .ci_flutter_app
+        run: |
+          flutter analyze
         continue-on-error: true
 
-      - name: Run tests
+      - name: Run Flutter tests
         working-directory: .ci_flutter_app
-        run: flutter test
+        run: |
+          if [ -d test ]; then
+            flutter test
+          else
+            echo "No tests found."
+          fi
 
-      - name: Build APK
+      - name: Build release APK
         working-directory: .ci_flutter_app
-        run: flutter build apk --release
+        run: |
+          flutter clean
+          flutter pub get
+          flutter build apk --release
 
-      - name: Check APK
+      - name: Verify APK
         shell: bash
         run: |
           set -e
@@ -91,13 +159,51 @@ jobs:
             exit 1
           fi
 
-          echo "APK created successfully:"
+          SIZE=$(stat -c%s "$APK")
+
+          echo "APK:"
           ls -lh "$APK"
+
+          echo "APK size: $SIZE bytes"
+
+          if [ "$SIZE" -lt 1000000 ]; then
+            echo "ERROR: APK is suspiciously small."
+            exit 1
+          fi
+
+          echo "Testing APK archive..."
+          unzip -t "$APK"
+
+          echo "APK verification successful."
+
+      - name: Rename APK
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p release
+
+          cp \
+            .ci_flutter_app/build/app/outputs/flutter-apk/app-release.apk \
+            release/FPG-release.apk
+
+          sha256sum release/FPG-release.apk \
+            > release/FPG-release.apk.sha256
+
+          ls -lh release/
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: FPG-release-APK
-          path: .ci_flutter_app/build/app/outputs/flutter-apk/app-release.apk
+          path: release/FPG-release.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: FPG-release-checksum
+          path: release/FPG-release.apk.sha256
           if-no-files-found: error
           retention-days: 14
