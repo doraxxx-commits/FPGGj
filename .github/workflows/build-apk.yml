@@ -17,25 +17,20 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # Ten krok automatycznie akceptuje WSZYSTKIE licencje Android SDK:
+      - uses: android-actions/setup-android@v3
+
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.35.0"
           channel: stable
-
-      # Wymuszenie akceptacji licencji SDK
-      - name: Accept Licenses
-        run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          flutter doctor --android-licenses || true
 
       - name: Install Dependencies
         run: flutter pub get
         working-directory: fpg_v23
 
       - name: Build APK
-        env:
-          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m"
-        run: flutter build apk --release --no-pub
+        run: flutter build apk --release
         working-directory: fpg_v23
 
       - uses: actions/upload-artifact@v4
