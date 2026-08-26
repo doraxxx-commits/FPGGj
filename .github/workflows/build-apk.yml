@@ -22,15 +22,24 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # Dodano working-directory
-      - run: flutter pub get
+      # Akceptacja licencji Android SDK
+      - name: Accept Android Licenses
+        run: y | flutter doctor --android-licenses || true
         working-directory: fpg_v23
 
-      # Dodano working-directory
-      - run: flutter build apk --release
+      # Pobranie pakietów
+      - name: Install Dependencies
+        run: flutter pub get
         working-directory: fpg_v23
 
-      # Zaktualizowano ścieżkę pobierania gotowego pliku APK
+      # Budowanie APK ze zwiększoną pamięcią dla Gradle
+      - name: Build APK
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m"
+        run: flutter build apk --release
+        working-directory: fpg_v23
+
+      # Wrzucenie gotowego pliku do Artifacts
       - uses: actions/upload-artifact@v4
         with:
           name: FPG-APK
